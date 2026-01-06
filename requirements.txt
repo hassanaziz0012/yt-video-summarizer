@@ -1,11 +1,6 @@
 fastapi[standard]
-google-api-python-client
-google-auth-oauthlib
 google-genai
-httpx
-psycopg2-binary
 python-dotenv
-sqlmodel
 youtube-transcript-api
 jinja2
 python-multipart
