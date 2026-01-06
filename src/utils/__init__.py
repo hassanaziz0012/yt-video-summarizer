@@ -5,12 +5,12 @@ NOTE: OAuth imports are commented out since we use youtube-transcript-api
 which doesn't require authentication.
 """
 
-from utils.youtube import (
+from .youtube import (
     get_transcript,
     get_video_info,
     get_english_caption_for_video,
 )
-from utils.general import extract_video_id
+from .general import extract_video_id
 
 __all__ = [
     # YouTube

@@ -12,7 +12,7 @@ from youtube_transcript_api._errors import (
     VideoUnavailable,
 )
 
-from utils.general import extract_video_id
+from .general import extract_video_id
 
 
 def get_transcript(video_id: str, languages: list[str] = ["en"]) -> str:

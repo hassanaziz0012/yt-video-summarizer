@@ -6,12 +6,12 @@ from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from utils import (
+from src.utils import (
     extract_video_id,
     get_transcript,
     get_video_info,
 )
-from utils.gemini import ask, SUMMARIZE_PROMPT
+from src.utils.gemini import ask, SUMMARIZE_PROMPT
 from dotenv import load_dotenv
 
 load_dotenv()
