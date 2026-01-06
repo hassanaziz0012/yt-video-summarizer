@@ -1,40 +1,22 @@
-# NOTE: OAuth/authentication code is commented out since we use youtube-transcript-api
-# which doesn't require authentication.
-
-# from contextlib import asynccontextmanager
 from pathlib import Path
+import json
 
-from fastapi import FastAPI, Request, Form  # Depends removed - not needed without auth
-
-# from models.user import User  # Not needed without OAuth
-from fastapi.responses import HTMLResponse, JSONResponse  # RedirectResponse removed
+from fastapi import FastAPI, Request, Form
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-# from db import init_db  # Database not needed without user storage
 from utils import (
     extract_video_id,
     get_transcript,
     get_video_info,
-    # get_oauth_authorization_url,  # OAuth not needed
-    # exchange_code_for_tokens,  # OAuth not needed
-    # get_user_by_id,  # OAuth not needed
 )
 from utils.gemini import ask, SUMMARIZE_PROMPT
 from dotenv import load_dotenv
 
 load_dotenv()
 
-
-# Database initialization no longer needed
-# @asynccontextmanager
-# async def lifespan(app: FastAPI):
-#     """Initialize database on startup."""
-#     init_db()
-#     yield
-
-
-app = FastAPI()  # Removed lifespan since we don't need database init
+app = FastAPI()
 
 # Mount static files directory
 app.mount(
@@ -43,104 +25,68 @@ app.mount(
 
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
 
-# Session cookie configuration (no longer needed)
-# SESSION_COOKIE_NAME = "session_user_id"
-
-
-# def get_current_user(request: Request) -> User | None:
-#     """Get the currently logged-in user from session cookie."""
-#     user_id = request.cookies.get(SESSION_COOKIE_NAME)
-#     if user_id is None:
-#         return None
-#     try:
-#         return get_user_by_id(int(user_id))
-#     except (ValueError, TypeError):
-#         return None
-
-
-# @app.get("/auth/login")
-# async def auth_login():
-#     """Redirect user to Google OAuth authorization page."""
-#     authorization_url, state = get_oauth_authorization_url()
-#     return RedirectResponse(url=authorization_url)
-
-
-# @app.get("/auth/google-oauth-callback")
-# async def auth_callback(code: str):
-#     """
-#     Handle the OAuth callback from Google.
-
-#     Exchanges the authorization code for tokens, saves user to database,
-#     and sets session cookie to keep user logged in.
-#     """
-#     try:
-#         user = exchange_code_for_tokens(code)
-#         response = RedirectResponse(url="/", status_code=302)
-#         response.set_cookie(
-#             key=SESSION_COOKIE_NAME,
-#             value=str(user.id),
-#             httponly=True,
-#             samesite="lax",
-#             max_age=60 * 60 * 24 * 30,  # 30 days
-#         )
-#         return response
-#     except Exception as e:
-#         return JSONResponse(
-#             status_code=500, content={"error": f"Authentication failed: {str(e)}"}
-#         )
-
-
-# @app.get("/auth/logout")
-# async def auth_logout():
-#     """Log out the user by clearing the session cookie."""
-#     response = RedirectResponse(url="/", status_code=302)
-#     response.delete_cookie(key=SESSION_COOKIE_NAME)
-#     return response
-
-
 @app.get("/", response_class=HTMLResponse)
-async def home(request: Request):  # Removed user dependency
+async def home(request: Request):
     return templates.TemplateResponse(request, "index.html")
+
+
+def sse_event(event_type: str, data: dict) -> str:
+    """Format a server-sent event."""
+    return f"event: {event_type}\ndata: {json.dumps(data)}\n\n"
 
 
 @app.post("/api/summarize")
 async def summarize(video_url: str = Form(...)):
     """
     Accept a YouTube video URL, fetch captions, and summarize using Gemini.
+    Uses Server-Sent Events to stream progress updates.
 
     Args:
         video_url: The YouTube video URL from form data.
 
     Returns:
-        JSON response with video_id, video_title, thumbnail, and summary.
+        StreamingResponse with SSE events for progress and final result.
     """
-    try:
-        # Extract video ID from URL
-        video_id = extract_video_id(video_url)
+    
+    def generate_events():
+        try:
+            # Extract video ID from URL
+            video_id = extract_video_id(video_url)
 
-        # Fetch video info (title, thumbnail) - no auth required
-        video_info = get_video_info(video_id)
+            # Step 1: Fetching video info
+            yield sse_event("progress", {"message": "Fetching video info"})
+            video_info = get_video_info(video_id)
 
-        # Fetch transcript using youtube-transcript-api (works for any public video)
-        transcript = get_transcript(video_id)
+            # Step 2: Fetching transcript
+            yield sse_event("progress", {"message": "Fetching video transcript"})
+            transcript = get_transcript(video_id)
 
-        # Generate summary using Gemini
-        prompt = SUMMARIZE_PROMPT.format(transcript=transcript)
-        summary = ask(prompt=prompt)
+            # Step 3: Summarizing with AI
+            yield sse_event("progress", {"message": "Summarizing with AI"})
+            prompt = SUMMARIZE_PROMPT.format(transcript=transcript)
+            summary = ask(prompt=prompt)
 
-        return {
-            "video_id": video_id,
-            "video_title": video_info["title"],
-            "thumbnail": video_info["thumbnail"],
-            "summary": summary,
+            # Send complete event with all data
+            yield sse_event("complete", {
+                "video_id": video_id,
+                "video_title": video_info["title"],
+                "thumbnail": video_info["thumbnail"],
+                "summary": summary,
+            })
+
+        except ValueError as e:
+            print(f"ValueError in summarize: {e}")
+            yield sse_event("error", {"error": str(e)})
+        except Exception as e:
+            print(f"Unexpected error in summarize: {e}")
+            yield sse_event("error", {"error": "An unexpected error occurred"})
+
+    return StreamingResponse(
+        generate_events(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
         }
-
-    except ValueError as e:
-        print(f"ValueError in summarize: {e}")
-        return JSONResponse(status_code=400, content={"error": str(e)})
-    except Exception as e:
-        print(f"Unexpected error in summarize: {e}")
-        return JSONResponse(
-            status_code=500, content={"error": "An unexpected error occurred"}
-        )
+    )
 
