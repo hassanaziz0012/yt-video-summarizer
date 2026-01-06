@@ -1,21 +1,24 @@
-from contextlib import asynccontextmanager
+# NOTE: OAuth/authentication code is commented out since we use youtube-transcript-api
+# which doesn't require authentication.
+
+# from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Request, Form, Depends
+from fastapi import FastAPI, Request, Form  # Depends removed - not needed without auth
 
-from models.user import User
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+# from models.user import User  # Not needed without OAuth
+from fastapi.responses import HTMLResponse, JSONResponse  # RedirectResponse removed
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from db import init_db
+# from db import init_db  # Database not needed without user storage
 from utils import (
     extract_video_id,
     get_transcript,
     get_video_info,
-    get_oauth_authorization_url,
-    exchange_code_for_tokens,
-    get_user_by_id,
+    # get_oauth_authorization_url,  # OAuth not needed
+    # exchange_code_for_tokens,  # OAuth not needed
+    # get_user_by_id,  # OAuth not needed
 )
 from utils.gemini import ask, SUMMARIZE_PROMPT
 from dotenv import load_dotenv
@@ -23,14 +26,15 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Initialize database on startup."""
-    init_db()
-    yield
+# Database initialization no longer needed
+# @asynccontextmanager
+# async def lifespan(app: FastAPI):
+#     """Initialize database on startup."""
+#     init_db()
+#     yield
 
 
-app = FastAPI(lifespan=lifespan)
+app = FastAPI()  # Removed lifespan since we don't need database init
 
 # Mount static files directory
 app.mount(
@@ -39,64 +43,64 @@ app.mount(
 
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
 
-# Session cookie configuration
-SESSION_COOKIE_NAME = "session_user_id"
+# Session cookie configuration (no longer needed)
+# SESSION_COOKIE_NAME = "session_user_id"
 
 
-def get_current_user(request: Request) -> User | None:
-    """Get the currently logged-in user from session cookie."""
-    user_id = request.cookies.get(SESSION_COOKIE_NAME)
-    if user_id is None:
-        return None
-    try:
-        return get_user_by_id(int(user_id))
-    except (ValueError, TypeError):
-        return None
+# def get_current_user(request: Request) -> User | None:
+#     """Get the currently logged-in user from session cookie."""
+#     user_id = request.cookies.get(SESSION_COOKIE_NAME)
+#     if user_id is None:
+#         return None
+#     try:
+#         return get_user_by_id(int(user_id))
+#     except (ValueError, TypeError):
+#         return None
 
 
-@app.get("/auth/login")
-async def auth_login():
-    """Redirect user to Google OAuth authorization page."""
-    authorization_url, state = get_oauth_authorization_url()
-    return RedirectResponse(url=authorization_url)
+# @app.get("/auth/login")
+# async def auth_login():
+#     """Redirect user to Google OAuth authorization page."""
+#     authorization_url, state = get_oauth_authorization_url()
+#     return RedirectResponse(url=authorization_url)
 
 
-@app.get("/auth/google-oauth-callback")
-async def auth_callback(code: str):
-    """
-    Handle the OAuth callback from Google.
+# @app.get("/auth/google-oauth-callback")
+# async def auth_callback(code: str):
+#     """
+#     Handle the OAuth callback from Google.
 
-    Exchanges the authorization code for tokens, saves user to database,
-    and sets session cookie to keep user logged in.
-    """
-    try:
-        user = exchange_code_for_tokens(code)
-        response = RedirectResponse(url="/", status_code=302)
-        response.set_cookie(
-            key=SESSION_COOKIE_NAME,
-            value=str(user.id),
-            httponly=True,
-            samesite="lax",
-            max_age=60 * 60 * 24 * 30,  # 30 days
-        )
-        return response
-    except Exception as e:
-        return JSONResponse(
-            status_code=500, content={"error": f"Authentication failed: {str(e)}"}
-        )
+#     Exchanges the authorization code for tokens, saves user to database,
+#     and sets session cookie to keep user logged in.
+#     """
+#     try:
+#         user = exchange_code_for_tokens(code)
+#         response = RedirectResponse(url="/", status_code=302)
+#         response.set_cookie(
+#             key=SESSION_COOKIE_NAME,
+#             value=str(user.id),
+#             httponly=True,
+#             samesite="lax",
+#             max_age=60 * 60 * 24 * 30,  # 30 days
+#         )
+#         return response
+#     except Exception as e:
+#         return JSONResponse(
+#             status_code=500, content={"error": f"Authentication failed: {str(e)}"}
+#         )
 
 
-@app.get("/auth/logout")
-async def auth_logout():
-    """Log out the user by clearing the session cookie."""
-    response = RedirectResponse(url="/", status_code=302)
-    response.delete_cookie(key=SESSION_COOKIE_NAME)
-    return response
+# @app.get("/auth/logout")
+# async def auth_logout():
+#     """Log out the user by clearing the session cookie."""
+#     response = RedirectResponse(url="/", status_code=302)
+#     response.delete_cookie(key=SESSION_COOKIE_NAME)
+#     return response
 
 
 @app.get("/", response_class=HTMLResponse)
-async def home(request: Request, user: User | None = Depends(get_current_user)):
-    return templates.TemplateResponse(request, "index.html", {"user": user})
+async def home(request: Request):  # Removed user dependency
+    return templates.TemplateResponse(request, "index.html")
 
 
 @app.post("/api/summarize")
