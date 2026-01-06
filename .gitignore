@@ -1,0 +1,19 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# tokens
+client.json
+token.json
+.env
+database.db
+
+# npm
+node_modules
