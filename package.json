@@ -6,7 +6,8 @@
     "scripts": {
         "dev:tailwind": "npx @tailwindcss/cli -i ./src/static/input.css -o ./src/static/output.css --watch",
         "dev:api": "fastapi dev src/app.py",
-        "dev": "concurrently --kill-others --names 'tailwind,api' --prefix-colors 'blue,yellow' 'npm run dev:tailwind' 'npm run dev:api'"
+        "dev": "concurrently --kill-others --names 'tailwind,api' --prefix-colors 'blue,yellow' 'npm run dev:tailwind' 'npm run dev:api'",
+        "build": "npx @tailwindcss/cli -i ./src/static/input.css -o ./src/static/output.css"
     },
     "devDependencies": {
         "@types/bun": "latest"
