@@ -5,14 +5,39 @@ Uses youtube-transcript-api for fetching transcripts (works for any public video
 and YouTube Data API for video metadata.
 """
 
+import os
 from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api._errors import (
     TranscriptsDisabled,
     NoTranscriptFound,
     VideoUnavailable,
 )
+from youtube_transcript_api.proxies import WebshareProxyConfig
 
 from .general import extract_video_id
+
+
+def _get_transcript_api() -> YouTubeTranscriptApi:
+    """
+    Get a YouTubeTranscriptApi instance, optionally configured with Webshare proxy.
+
+    If WEBSHARE_USERNAME and WEBSHARE_PASSWORD environment variables are set,
+    the API will use Webshare rotating residential proxies to avoid IP bans.
+
+    Returns:
+        A configured YouTubeTranscriptApi instance.
+    """
+    webshare_username = os.environ.get("WEBSHARE_USERNAME")
+    webshare_password = os.environ.get("WEBSHARE_PASSWORD")
+
+    if webshare_username and webshare_password:
+        proxy_config = WebshareProxyConfig(
+            proxy_username=webshare_username,
+            proxy_password=webshare_password,
+        )
+        return YouTubeTranscriptApi(proxy_config=proxy_config)
+
+    return YouTubeTranscriptApi()
 
 
 def get_transcript(video_id: str, languages: list[str] = ["en"]) -> str:
@@ -21,6 +46,9 @@ def get_transcript(video_id: str, languages: list[str] = ["en"]) -> str:
 
     Uses youtube-transcript-api which works for any public video
     without requiring OAuth authentication.
+
+    If WEBSHARE_USERNAME and WEBSHARE_PASSWORD environment variables are set,
+    requests will be proxied through Webshare to avoid IP bans on cloud platforms.
 
     Args:
         video_id: The YouTube video ID.
@@ -33,7 +61,7 @@ def get_transcript(video_id: str, languages: list[str] = ["en"]) -> str:
         ValueError: If no transcript is available for the video.
     """
     try:
-        api = YouTubeTranscriptApi()
+        api = _get_transcript_api()
         transcript = api.fetch(video_id, languages=languages)
         # Combine all segments into a single text
         return " ".join(segment.text for segment in transcript)
