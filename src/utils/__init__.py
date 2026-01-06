@@ -13,10 +13,7 @@ from utils.oauth import (
     get_authenticated_credentials,
 )
 from utils.youtube import (
-    build_youtube_client,
-    get_captions_list,
-    find_english_caption,
-    download_caption,
+    get_transcript,
     get_video_info,
     get_english_caption_for_video,
 )
@@ -33,12 +30,10 @@ __all__ = [
     "get_user_by_id",
     "get_authenticated_credentials",
     # YouTube
-    "build_youtube_client",
-    "get_captions_list",
-    "find_english_caption",
-    "download_caption",
+    "get_transcript",
     "get_video_info",
     "get_english_caption_for_video",
     # General
     "extract_video_id",
 ]
+

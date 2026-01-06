@@ -10,11 +10,8 @@ from fastapi.templating import Jinja2Templates
 
 from db import init_db
 from utils import (
-    build_youtube_client,
     extract_video_id,
-    get_captions_list,
-    find_english_caption,
-    download_caption,
+    get_transcript,
     get_video_info,
     get_oauth_authorization_url,
     exchange_code_for_tokens,
@@ -114,38 +111,17 @@ async def summarize(video_url: str = Form(...)):
         JSON response with video_id, video_title, thumbnail, and summary.
     """
     try:
-        # Build YouTube API client
-        youtube = build_youtube_client()
-
         # Extract video ID from URL
         video_id = extract_video_id(video_url)
 
-        # Fetch video info (title, thumbnail)
-        video_info = get_video_info(youtube, video_id)
+        # Fetch video info (title, thumbnail) - no auth required
+        video_info = get_video_info(video_id)
 
-        # Fetch available captions
-        captions = get_captions_list(youtube, video_id)
-
-        if not captions:
-            return JSONResponse(
-                status_code=404, content={"error": "No captions found for this video"}
-            )
-
-        # Find English caption
-        english_caption = find_english_caption(captions)
-
-        if not english_caption:
-            return JSONResponse(
-                status_code=404,
-                content={"error": "No English captions available for this video"},
-            )
-
-        # Download caption content
-        caption_id = english_caption.get("id")
-        caption_content = download_caption(youtube, caption_id)
+        # Fetch transcript using youtube-transcript-api (works for any public video)
+        transcript = get_transcript(video_id)
 
         # Generate summary using Gemini
-        prompt = SUMMARIZE_PROMPT.format(transcript=caption_content)
+        prompt = SUMMARIZE_PROMPT.format(transcript=transcript)
         summary = ask(prompt=prompt)
 
         return {
@@ -157,9 +133,10 @@ async def summarize(video_url: str = Form(...)):
 
     except ValueError as e:
         print(f"ValueError in summarize: {e}")
-        return JSONResponse(status_code=400, content={"error": "Invalid request"})
+        return JSONResponse(status_code=400, content={"error": str(e)})
     except Exception as e:
         print(f"Unexpected error in summarize: {e}")
         return JSONResponse(
             status_code=500, content={"error": "An unexpected error occurred"}
         )
+

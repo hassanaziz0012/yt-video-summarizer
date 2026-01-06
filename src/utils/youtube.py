@@ -1,127 +1,81 @@
 """
-YouTube Data API utility functions.
+YouTube utility functions.
+
+Uses youtube-transcript-api for fetching transcripts (works for any public video)
+and YouTube Data API for video metadata.
 """
 
-from googleapiclient.discovery import build, Resource
-from googleapiclient.http import HttpRequest
+from youtube_transcript_api import YouTubeTranscriptApi
+from youtube_transcript_api._errors import (
+    TranscriptsDisabled,
+    NoTranscriptFound,
+    VideoUnavailable,
+)
 
-from utils.oauth import get_authenticated_credentials
 from utils.general import extract_video_id
 
 
-def build_youtube_client() -> Resource:
+def get_transcript(video_id: str, languages: list[str] = ["en"]) -> str:
     """
-    Build and return an OAuth-authenticated YouTube API client.
+    Fetch the transcript for a YouTube video.
+
+    Uses youtube-transcript-api which works for any public video
+    without requiring OAuth authentication.
+
+    Args:
+        video_id: The YouTube video ID.
+        languages: List of language codes to try (default: ['en']).
 
     Returns:
-        A YouTube API Resource object for making API calls.
+        The transcript as a plain text string.
 
     Raises:
-        ValueError: If not authenticated (no valid tokens).
+        ValueError: If no transcript is available for the video.
     """
-    credentials = get_authenticated_credentials()
-
-    if not credentials:
-        raise ValueError(
-            "Not authenticated. Please authenticate via /auth/login first."
-        )
-
-    return build("youtube", "v3", credentials=credentials)
-
-
-def get_captions_list(youtube: Resource, video_id: str) -> list[dict]:
-    """
-    Fetch the list of available captions for a video.
-
-    Args:
-        youtube: An authenticated YouTube API client.
-        video_id: The YouTube video ID.
-
-    Returns:
-        A list of caption track metadata dictionaries.
-    """
-    request: HttpRequest = youtube.captions().list(part="snippet", videoId=video_id)
-    response = request.execute()
-
-    return response.get("items", [])
+    try:
+        api = YouTubeTranscriptApi()
+        transcript = api.fetch(video_id, languages=languages)
+        # Combine all segments into a single text
+        return " ".join(segment.text for segment in transcript)
+    except TranscriptsDisabled:
+        raise ValueError("Transcripts are disabled for this video")
+    except NoTranscriptFound:
+        raise ValueError(f"No transcript found in languages: {languages}")
+    except VideoUnavailable:
+        raise ValueError("Video is unavailable")
 
 
-def find_english_caption(captions: list[dict]) -> dict | None:
-    """
-    Find the first English caption track from a list of captions.
-
-    Looks for language codes starting with 'en' (e.g., 'en', 'en-US', 'en-GB').
-
-    Args:
-        captions: A list of caption track metadata dictionaries.
-
-    Returns:
-        The first English caption track, or None if not found.
-    """
-    for caption in captions:
-        language = caption.get("snippet", {}).get("language", "")
-        if language.startswith("en"):
-            return caption
-
-    return None
-
-
-def download_caption(youtube: Resource, caption_id: str, tfmt: str = "srt") -> str:
-    """
-    Download the caption content for a given caption track.
-
-    Args:
-        youtube: An OAuth-authenticated YouTube API client.
-        caption_id: The ID of the caption track to download.
-        tfmt: The format for the caption (default: 'srt').
-
-    Returns:
-        The caption content as a string.
-    """
-    request: HttpRequest = youtube.captions().download(id=caption_id, tfmt=tfmt)
-    return request.execute()
-
-
-def get_video_info(youtube: Resource, video_id: str) -> dict:
+def get_video_info(video_id: str) -> dict:
     """
     Fetch video title and thumbnail for a given video ID.
 
+    Uses YouTube's oEmbed endpoint which doesn't require authentication.
+
     Args:
-        youtube: An authenticated YouTube API client.
         video_id: The YouTube video ID.
 
     Returns:
         A dictionary with 'title' and 'thumbnail' keys.
     """
-    request: HttpRequest = youtube.videos().list(part="snippet", id=video_id)
-    response = request.execute()
+    # Use high-quality thumbnail URL pattern (works for all public videos)
+    thumbnail_url = f"https://img.youtube.com/vi/{video_id}/hqdefault.jpg"
 
-    items = response.get("items", [])
-    if not items:
-        return {"title": "", "thumbnail": ""}
+    # For title, we can use oEmbed API (no auth required)
+    import urllib.request
+    import json
 
-    snippet = items[0].get("snippet", {})
-    thumbnails = snippet.get("thumbnails", {})
-    # Prefer high quality, fall back to medium, then default
-    thumbnail_url = (
-        thumbnails.get("high", {}).get("url")
-        or thumbnails.get("medium", {}).get("url")
-        or thumbnails.get("default", {}).get("url", "")
-    )
-
-    return {"title": snippet.get("title", ""), "thumbnail": thumbnail_url}
+    try:
+        oembed_url = f"https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v={video_id}&format=json"
+        with urllib.request.urlopen(oembed_url) as response:
+            data = json.loads(response.read().decode())
+            return {"title": data.get("title", ""), "thumbnail": thumbnail_url}
+    except Exception:
+        return {"title": "", "thumbnail": thumbnail_url}
 
 
 def get_english_caption_for_video(video_url: str) -> str | None:
     """
     High-level function to get English captions for a YouTube video.
-
-    This is a convenience function that chains together:
-    1. Building the YouTube client
-    2. Extracting the video ID
-    3. Fetching available captions
-    4. Finding the first English caption
-    5. Downloading the caption content
 
     Args:
         video_url: A YouTube video URL.
@@ -130,16 +84,10 @@ def get_english_caption_for_video(video_url: str) -> str | None:
         The English caption content as a string, or None if no English caption exists.
 
     Raises:
-        ValueError: If video ID cannot be extracted or not authenticated.
+        ValueError: If video ID cannot be extracted.
     """
-    youtube = build_youtube_client()
     video_id = extract_video_id(video_url)
-
-    captions = get_captions_list(youtube, video_id)
-    english_caption = find_english_caption(captions)
-
-    if not english_caption:
+    try:
+        return get_transcript(video_id)
+    except ValueError:
         return None
-
-    caption_id = english_caption.get("id")
-    return download_caption(youtube, caption_id)
