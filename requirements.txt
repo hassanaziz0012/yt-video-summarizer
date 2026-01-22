@@ -5,3 +5,4 @@ youtube-transcript-api
 jinja2
 python-multipart
 uvicorn
+requests
